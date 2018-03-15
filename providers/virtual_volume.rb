@@ -63,15 +63,18 @@ action :grow_to_size do
   fail ArgumentError, 'Attribute size is required for volume grow to size' unless new_resource.size
   fail ArgumentError, 'Attribute size_unit is required for volume grow to size' unless new_resource.size_unit
 
-  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug) and
-      get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).size_mib < convert_to_binary_multiple(new_resource.size, new_resource.size_unit)
-    converge_by("Growing volume #{new_resource.name} to size: #{new_resource.size} #{new_resource.size_unit}") do
-      grow_volume(new_resource.storage_system, new_resource.name,
+  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug)
+    if get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).size_mib < convert_to_binary_multiple(new_resource.size, new_resource.size_unit)
+      converge_by("Growing volume #{new_resource.name} to size: #{new_resource.size} #{new_resource.size_unit}") do
+        grow_volume(new_resource.storage_system, new_resource.name,
                   convert_to_binary_multiple(new_resource.size, new_resource.size_unit) - get_volume(new_resource.storage_system, new_resource.name).size_mib,
                   'MiB', new_resource.debug)
+      end                  
+    else
+      Chef::Log.info("Volume #{new_resource.name} is already equal or the new size is less than the existing size of the volume. Nothing to do.")
     end
   else
-    Chef::Log.info("Volume #{new_resource.name} is already equal or the new size is less than the existing size of the volume. Nothing to do.")
+    Chef::Log.info("Volume #{new_resource.name} does not exist.")
   end
 end
 
@@ -83,13 +86,17 @@ action :change_snap_cpg do
        'Attribute name is required for changing the snap cpg of a volume' unless new_resource.name
   fail ArgumentError,
        'Attribute snap_cpg is required for changing the snap cpg of a volume' unless new_resource.snap_cpg
-  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug) and get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).snap_cpg != new_resource.snap_cpg
-    converge_by("Change Snap CPG of volume #{new_resource.name} to CPG: #{new_resource.snap_cpg}") do
-      change_snap_cpg(new_resource.storage_system, new_resource.name,
-                      new_resource.snap_cpg, new_resource.wait_for_task_to_end, new_resource.debug)
+  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug) 
+    if get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).snap_cpg != new_resource.snap_cpg
+      converge_by("Change Snap CPG of volume #{new_resource.name} to CPG: #{new_resource.snap_cpg}") do
+        change_snap_cpg(new_resource.storage_system, new_resource.name,
+                        new_resource.snap_cpg, new_resource.wait_for_task_to_end, new_resource.debug)
+      end                        
+    else
+      Chef::Log.info("Volume snap CPG #{new_resource.snap_cpg} is already set")                    
     end
   else
-    Chef::Log.info("Volume snap CPG #{new_resource.snap_cpg} is already set")
+    Chef::Log.info("Volume #{new_resource.name} does not exist.")
   end
 end
 
@@ -101,14 +108,17 @@ action :change_user_cpg do
        'Attribute name is required for changing the user cpg of a volume' unless new_resource.name
   fail ArgumentError,
        'Attribute snap_cpg is required for changing the user cpg of a volume' unless new_resource.cpg
-  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug) and
-      get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).user_cpg != new_resource.cpg
-    converge_by("Change User CPG of volume #{new_resource.name} to CPG: #{new_resource.cpg}") do
-      change_user_cpg(new_resource.storage_system, new_resource.name,
-                    new_resource.cpg, new_resource.wait_for_task_to_end, new_resource.debug)
+  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug)
+    if get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).user_cpg != new_resource.cpg
+      converge_by("Change User CPG of volume #{new_resource.name} to CPG: #{new_resource.cpg}") do
+        change_user_cpg(new_resource.storage_system, new_resource.name,
+                      new_resource.cpg, new_resource.wait_for_task_to_end, new_resource.debug)
+      end                      
+    else
+      Chef::Log.info("Volume user CPG #{new_resource.cpg} is already set")
     end
   else
-    Chef::Log.info("Volume user CPG #{new_resource.cpg} is already set")
+    Chef::Log.info("Volume #{new_resource.name} does not exist.")
   end
 end
 
@@ -135,15 +145,18 @@ action :convert_type do
   end
 
 
-  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug) and
-      (volume_type != get_volume_type(new_resource.type) or volume_type == 'UNKNOWN')
+  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug)
+    if (volume_type != get_volume_type(new_resource.type) or volume_type == 'UNKNOWN')
     converge_by("Convert type of volume #{new_resource.name} to type: #{new_resource.type}") do
       convert_volume_type(new_resource.storage_system, new_resource.name, new_resource.cpg,
                           new_resource.type, new_resource.keep_vv, new_resource.compression,
                           new_resource.wait_for_task_to_end, new_resource.debug)
+      end
+    else
+      Chef::Log.info("Volume provisioning type #{new_resource.type} is already set")
     end
   else
-    Chef::Log.info("Volume provisioning type #{new_resource.type} is already set")
+    Chef::Log.info("Volume #{new_resource.name} does not exist.")
   end
 end
 
@@ -179,12 +192,15 @@ action :set_snap_cpg do
        'Attribute name is required' unless new_resource.name
   fail ArgumentError,
        'Attribute snap_cpg is required' unless new_resource.snap_cpg
-  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug) and
-      get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).snap_cpg != new_resource.snap_cpg
-    converge_by("Set snap CPG on volume #{new_resource.name} as #{new_resource.snap_cpg}") do
-      set_snap_cpg(new_resource.storage_system, new_resource.name, new_resource.snap_cpg, new_resource.debug)
+  if volume_exists?(new_resource.storage_system, new_resource.name, new_resource.debug)
+    if get_volume(new_resource.storage_system, new_resource.name, new_resource.debug).snap_cpg != new_resource.snap_cpg
+      converge_by("Set snap CPG on volume #{new_resource.name} as #{new_resource.snap_cpg}") do
+        set_snap_cpg(new_resource.storage_system, new_resource.name, new_resource.snap_cpg, new_resource.debug)
+      end
+    else
+      Chef::Log.info("Volume snap CPG #{new_resource.snap_cpg} is already set")
     end
   else
-    Chef::Log.info("Volume snap CPG #{new_resource.snap_cpg} is already set")
+    Chef::Log.info("Volume #{new_resource.name} does not exist.")
   end
 end
